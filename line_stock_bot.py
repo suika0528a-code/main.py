@@ -27,6 +27,24 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
 
+    text = event.message.text.strip().upper()
+
+    print("收到訊息:", text)
+
+    try:
+        stock = yf.Ticker(text)
+        price = stock.fast_info["last_price"]
+
+        msg = f"{text} 目前價格: ${round(price,2)}"
+
+    except:
+        msg = f"查不到股票: {text}"
+
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=msg)
+    )
+
     text = event.message.text.upper()
 
     try:
