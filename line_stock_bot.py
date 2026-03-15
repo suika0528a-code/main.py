@@ -18,7 +18,7 @@ alerts = {}
 
 @app.route("/")
 def home():
-    return "AI QUANT BOT V3 RUNNING"
+    return "AI QUANT BOT V6 RUNNING"
 
 
 @app.route("/callback", methods=['POST'])
@@ -30,14 +30,14 @@ def callback():
     try:
         if signature:
             handler.handle(body, signature)
-    except Exception as e:
-        print(e)
+    except:
+        pass
 
     return "OK"
 
 
 # -------------------------
-# 到價提醒監控
+# 到價提醒
 # -------------------------
 def alert_worker():
 
@@ -50,8 +50,7 @@ def alert_worker():
 
             try:
 
-                stock = yf.Ticker(ticker)
-                price = stock.fast_info["last_price"]
+                price = yf.Ticker(ticker).fast_info["last_price"]
 
                 if price >= target:
 
@@ -69,14 +68,13 @@ def alert_worker():
 
         time.sleep(60)
 
-
 threading.Thread(target=alert_worker, daemon=True).start()
 
 
 # -------------------------
-# 技術分析
+# 技術指標
 # -------------------------
-def technical_analysis(ticker):
+def indicators(ticker):
 
     data = yf.Ticker(ticker).history(period="3mo")
 
@@ -85,6 +83,7 @@ def technical_analysis(ticker):
     ma20 = close.rolling(20).mean().iloc[-1]
     ma50 = close.rolling(50).mean().iloc[-1]
 
+    # RSI
     delta = close.diff()
 
     gain = delta.clip(lower=0)
@@ -96,11 +95,76 @@ def technical_analysis(ticker):
     rs = avg_gain / avg_loss
     rsi = 100 - (100/(1+rs))
 
+    # MACD
+    ema12 = close.ewm(span=12).mean()
+    ema26 = close.ewm(span=26).mean()
+
+    macd = ema12 - ema26
+
+    # Bollinger
+    sma = close.rolling(20).mean()
+    std = close.rolling(20).std()
+
+    upper = sma + (2 * std)
+    lower = sma - (2 * std)
+
     price = close.iloc[-1]
 
-    trend = "多頭" if price > ma20 else "空頭"
+    return price, ma20, ma50, rsi.iloc[-1], macd.iloc[-1], upper.iloc[-1], lower.iloc[-1]
 
-    return price, ma20, ma50, rsi.iloc[-1], trend
+
+# -------------------------
+# RSI掃描
+# -------------------------
+def rsi_scan():
+
+    watch = ["NVDA","TSLA","AAPL","AMD","META","AMZN","MSFT","GOOGL"]
+
+    result = []
+
+    for ticker in watch:
+
+        try:
+
+            _, _, _, rsi, _, _, _ = indicators(ticker)
+
+            if rsi < 30:
+
+                result.append(f"{ticker} RSI {round(rsi,2)}")
+
+        except:
+            pass
+
+    return result
+
+
+# -------------------------
+# 突破掃描
+# -------------------------
+def breakout_scan():
+
+    watch = ["NVDA","TSLA","AAPL","AMD","META","AMZN"]
+
+    result = []
+
+    for ticker in watch:
+
+        try:
+
+            data = yf.Ticker(ticker).history(period="1mo")
+
+            high = data["High"].max()
+
+            price = yf.Ticker(ticker).fast_info["last_price"]
+
+            if price >= high:
+
+                result.append(ticker)
+
+        except:
+            pass
+
+    return result
 
 
 # -------------------------
@@ -116,11 +180,10 @@ def handle_message(event):
 
         if text == "HELP":
 
-            msg = """AI量化交易助手 v3
+            msg = """AI量化交易助手 v6
 
 查股價
 NVDA
-TSLA
 
 技術分析
 analysis NVDA
@@ -128,31 +191,33 @@ analysis NVDA
 RSI
 rsi NVDA
 
-AI趨勢
+AI分析
 ai NVDA
 
 到價提醒
 alert NVDA 150
 
-熱門股
-hot
+RSI掃描
+scan
+
+突破掃描
+breakout
 
 K線圖
 chart NVDA
 """
 
-        elif text == "HOT":
+        elif text == "SCAN":
 
-            msg = """熱門科技股
+            result = rsi_scan()
 
-NVDA
-TSLA
-AMD
-META
-AMZN
-MSFT
-GOOGL
-"""
+            msg = "RSI <30 股票\n\n" + "\n".join(result) if result else "沒有 RSI <30 股票"
+
+        elif text == "BREAKOUT":
+
+            result = breakout_scan()
+
+            msg = "突破股票\n\n" + "\n".join(result) if result else "沒有突破股票"
 
         elif text.startswith("ALERT"):
 
@@ -172,7 +237,7 @@ GOOGL
 
             ticker = text.split(" ")[1]
 
-            price, ma20, ma50, rsi, trend = technical_analysis(ticker)
+            price, ma20, ma50, rsi, macd, upper, lower = indicators(ticker)
 
             msg = f"""{ticker} 技術分析
 
@@ -182,23 +247,10 @@ MA20: {round(ma20,2)}
 MA50: {round(ma50,2)}
 
 RSI: {round(rsi,2)}
+MACD: {round(macd,2)}
 
-趨勢: {trend}
-"""
-
-        elif text.startswith("RSI"):
-
-            ticker = text.split(" ")[1]
-
-            _, _, _, rsi, _ = technical_analysis(ticker)
-
-            state = "超買" if rsi > 70 else "超賣" if rsi < 30 else "中性"
-
-            msg = f"""{ticker} RSI
-
-RSI: {round(rsi,2)}
-
-狀態: {state}
+布林上軌: {round(upper,2)}
+布林下軌: {round(lower,2)}
 """
 
         elif text.startswith("AI"):
@@ -231,9 +283,7 @@ RSI: {round(rsi,2)}
 
             ticker = text
 
-            stock = yf.Ticker(ticker)
-
-            price = stock.fast_info["last_price"]
+            price = yf.Ticker(ticker).fast_info["last_price"]
 
             msg = f"{ticker} 目前價格 ${round(price,2)}"
 
