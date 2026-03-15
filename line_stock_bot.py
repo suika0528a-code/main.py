@@ -5,8 +5,8 @@ import yfinance as yf
 
 app = Flask(__name__)
 
-LINE_CHANNEL_ACCESS_TOKEN = "9M9gWuDL+9swPRQtYnGcAfXFwwy1rwlI2b9gBXBhmKv/5yXkdvAMWKCzptxJu0E9paX1nkj88rDh9HUk0mXCvKznM3sTGM9k6upXohJb/+I/civXiL3dU6dp/1Rpz2X+vPvAhMGj5PE5p0L1pCPR7gdB04t89/1O/w1cDnyilFU="
-LINE_CHANNEL_SECRET = "f7f7b714907d5efd93a29d5866c9593b"
+LINE_CHANNEL_ACCESS_TOKEN = "BPQ/+EOBTi0a5fWsab/05yvB8J8v4jsh3zqjk2TqnSoMJ5CsJxU2+RTGKlQx0FndpaX1nkj88rDh9HUk0mXCvKznM3sTGM9k6upXohJb/+JtLYzFboHjcT41gIldo8TNka3g0m8jfe/dgZuU8ll8tAdB04t89/1O/w1cDnyilFU="
+LINE_CHANNEL_SECRET = "23cd049315c1c76fc3c115445fe1f650"
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -18,10 +18,8 @@ def callback():
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
 
-    if signature is None:
-        return 'OK'
-
-    handler.handle(body, signature)
+    if signature:
+        handler.handle(body, signature)
 
     return 'OK'
 
@@ -33,11 +31,12 @@ def handle_message(event):
 
     try:
         stock = yf.Ticker(text)
-        price = stock.info["regularMarketPrice"]
-        msg = f"{text} 目前價格: ${price}"
+        price = stock.fast_info["last_price"]
+
+        msg = f"{text} 目前價格: ${round(price,2)}"
 
     except:
-        msg = "請輸入股票代碼，例如 NVDA"
+        msg = "查不到此股票，請輸入例如 NVDA / TSLA / AAPL"
 
     line_bot_api.reply_message(
         event.reply_token,
