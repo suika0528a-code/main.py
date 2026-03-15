@@ -18,7 +18,7 @@ alerts = {}
 
 @app.route("/")
 def home():
-    return "AI QUANT STOCK BOT V2 RUNNING"
+    return "AI QUANT BOT V3 RUNNING"
 
 
 @app.route("/callback", methods=['POST'])
@@ -36,9 +36,9 @@ def callback():
     return "OK"
 
 
-# ----------------
-# 到價提醒
-# ----------------
+# -------------------------
+# 到價提醒監控
+# -------------------------
 def alert_worker():
 
     while True:
@@ -73,9 +73,9 @@ def alert_worker():
 threading.Thread(target=alert_worker, daemon=True).start()
 
 
-# ----------------
+# -------------------------
 # 技術分析
-# ----------------
+# -------------------------
 def technical_analysis(ticker):
 
     data = yf.Ticker(ticker).history(period="3mo")
@@ -103,9 +103,9 @@ def technical_analysis(ticker):
     return price, ma20, ma50, rsi.iloc[-1], trend
 
 
-# ----------------
-# LINE 訊息
-# ----------------
+# -------------------------
+# LINE訊息
+# -------------------------
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
 
@@ -116,7 +116,7 @@ def handle_message(event):
 
         if text == "HELP":
 
-            msg = """AI量化交易助手
+            msg = """AI量化交易助手 v3
 
 查股價
 NVDA
@@ -133,6 +133,25 @@ ai NVDA
 
 到價提醒
 alert NVDA 150
+
+熱門股
+hot
+
+K線圖
+chart NVDA
+"""
+
+        elif text == "HOT":
+
+            msg = """熱門科技股
+
+NVDA
+TSLA
+AMD
+META
+AMZN
+MSFT
+GOOGL
 """
 
         elif text.startswith("ALERT"):
@@ -195,12 +214,18 @@ RSI: {round(rsi,2)}
 
             trend = "多頭" if change > 0 else "空頭"
 
-            msg = f"""{ticker} AI趨勢
+            msg = f"""{ticker} AI市場分析
 
 5日變化: {round(change,2)}%
 
 市場趨勢: {trend}
 """
+
+        elif text.startswith("CHART"):
+
+            ticker = text.split(" ")[1]
+
+            msg = f"{ticker} K線圖\nhttps://finance.yahoo.com/quote/{ticker}/chart"
 
         else:
 
