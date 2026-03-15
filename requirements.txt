@@ -1,6 +1,4 @@
 flask
 line-bot-sdk
 yfinance
-pandas
-matplotlib
 gunicorn
