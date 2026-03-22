@@ -14,7 +14,7 @@ line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 # =========================
-# SQLite 初始化
+# DB 初始化
 # =========================
 conn = sqlite3.connect("alerts.db", check_same_thread=False)
 cursor = conn.cursor()
@@ -23,7 +23,8 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS alerts (
     user_id TEXT,
     ticker TEXT,
-    price REAL
+    price REAL,
+    direction TEXT
 )
 """)
 conn.commit()
@@ -33,10 +34,10 @@ conn.commit()
 # =========================
 @app.route("/")
 def home():
-    return "AI STOCK BOT RUNNING"
+    return "AI QUANT BOT V7 RUNNING"
 
 # =========================
-# LINE webhook
+# Webhook
 # =========================
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -51,7 +52,30 @@ def callback():
     return "OK"
 
 # =========================
-# 到價檢查（給 UptimeRobot 用）
+# 技術指標
+# =========================
+def indicators(ticker):
+    data = yf.Ticker(ticker).history(period="3mo")
+    close = data["Close"]
+
+    ma20 = close.rolling(20).mean().iloc[-1]
+    ma50 = close.rolling(50).mean().iloc[-1]
+
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    rs = gain.rolling(14).mean() / loss.rolling(14).mean()
+    rsi = 100 - (100/(1+rs))
+
+    ema12 = close.ewm(span=12).mean()
+    ema26 = close.ewm(span=26).mean()
+    macd = ema12 - ema26
+
+    return close.iloc[-1], ma20, ma50, rsi.iloc[-1], macd.iloc[-1]
+
+# =========================
+# alert 檢查（給 UptimeRobot）
 # =========================
 @app.route("/check_alert")
 def check_alert():
@@ -60,16 +84,23 @@ def check_alert():
     rows = cursor.fetchall()
 
     for row in rows:
-        row_id, user_id, ticker, target = row
+        row_id, user_id, ticker, target, direction = row
 
         try:
             price = yf.Ticker(ticker).fast_info["last_price"]
 
-            if price >= target:
+            trigger = False
+
+            if direction == "up" and price >= target:
+                trigger = True
+            elif direction == "down" and price <= target:
+                trigger = True
+
+            if trigger:
                 line_bot_api.push_message(
                     user_id,
                     TextSendMessage(
-                        text=f"{ticker} 已達 ${target}\n目前價格 ${round(price,2)}"
+                        text=f"{ticker} 觸發提醒\n目標 {target}\n目前 {round(price,2)}"
                     )
                 )
 
@@ -82,7 +113,7 @@ def check_alert():
     return "OK"
 
 # =========================
-# LINE訊息處理
+# LINE 訊息
 # =========================
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
@@ -92,29 +123,56 @@ def handle_message(event):
 
     try:
 
-        # 設定提醒
+        # ALERT
         if text.startswith("ALERT"):
-            parts = text.split(" ")
-
-            ticker = parts[1]
-            price = float(parts[2])
+            _, ticker, price, direction = text.split(" ")
 
             cursor.execute(
-                "INSERT INTO alerts VALUES (?, ?, ?)",
-                (user_id, ticker, price)
+                "INSERT INTO alerts VALUES (?, ?, ?, ?)",
+                (user_id, ticker, float(price), direction)
             )
             conn.commit()
 
-            msg = f"已設定提醒 {ticker} ${price}"
+            msg = f"已設定 {ticker} {price} {direction}"
 
-        # 查股價
+        # 技術分析
+        elif text.startswith("ANALYSIS"):
+            ticker = text.split(" ")[1]
+            p, ma20, ma50, rsi, macd = indicators(ticker)
+
+            msg = f"""{ticker}
+價格: {round(p,2)}
+MA20: {round(ma20,2)}
+MA50: {round(ma50,2)}
+RSI: {round(rsi,2)}
+MACD: {round(macd,2)}"""
+
+        # AI分析
+        elif text.startswith("AI"):
+            ticker = text.split(" ")[1]
+            data = yf.Ticker(ticker).history(period="5d")
+
+            start = data["Close"].iloc[0]
+            end = data["Close"].iloc[-1]
+            change = ((end-start)/start)*100
+
+            trend = "多頭" if change > 0 else "空頭"
+
+            msg = f"{ticker}\n5日變化: {round(change,2)}%\n趨勢: {trend}"
+
+        # K線圖
+        elif text.startswith("CHART"):
+            ticker = text.split(" ")[1]
+            msg = f"https://finance.yahoo.com/quote/{ticker}/chart"
+
+        # 查價格
         else:
             ticker = text
             price = yf.Ticker(ticker).fast_info["last_price"]
-            msg = f"{ticker} 目前價格 ${round(price,2)}"
+            msg = f"{ticker} ${round(price,2)}"
 
     except:
-        msg = "請輸入正確格式，例如：ALERT NVDA 150"
+        msg = "格式錯誤"
 
     line_bot_api.reply_message(
         event.reply_token,
